@@ -1,0 +1,269 @@
+name: RAG Pipeline Eval
+description: Fail a pull request when RAG answers get less grounded. Scores a test set with @devilsdev/rag-pipeline-utils and posts a summary.
+author: DevilsDev
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  dataset:
+    description: 'Test set, relative to working-directory. A .json file (an array of cases, or { "cases": [...] }) or a .jsonl file with one case per line.'
+    required: true
+  working-directory:
+    description: Directory with the .ragrc.json config and the documents.
+    default: "."
+  config:
+    description: Config file, relative to working-directory.
+    default: .ragrc.json
+  ingest:
+    description: Path to index before the run, relative to working-directory. Leave empty when the index is already in place.
+    default: ""
+  min:
+    description: Minimum mean scores, one metric=value per line (e.g. faithfulness=0.8). Metrics are faithfulness, relevance, contextPrecision, contextRecall, groundedness, citationCoverage and sourceRecall.
+    default: ""
+  baseline:
+    description: A report saved by an earlier run, relative to working-directory. When set, the run fails if it got worse than this baseline.
+    default: ""
+  baseline-cache:
+    description: When "true", saves the report from pushes to the default branch in the Actions cache and compares pull requests with it. Ignored when baseline is set.
+    default: "false"
+  tolerance:
+    description: Allowed drop in a metric's mean from the baseline (the CLI default is 0.02).
+    default: ""
+  case-tolerance:
+    description: Drop in one case's score that lists the case in the summary (the CLI default is 0.1).
+    default: ""
+  concurrency:
+    description: Cases run at the same time.
+    default: "1"
+  timeout:
+    description: Per-case timeout in milliseconds.
+    default: ""
+  top-k:
+    description: Passages to retrieve per case.
+    default: ""
+  name:
+    description: Name for this evaluation. Separates the cached baseline and the pull request comment when a workflow runs more than one.
+    default: rag-eval
+  comment:
+    description: When "true", posts the summary on the pull request and updates it on later runs. Needs pull-requests write permission.
+    default: "true"
+  fail:
+    description: When "true", fails the job when the evaluation fails. Set "false" to only report.
+    default: "true"
+  version:
+    description: Version of @devilsdev/rag-pipeline-utils to install when the project doesn't have it installed. Needs 2.7.0 or later.
+    default: "2"
+  package:
+    description: Package to install instead of @devilsdev/rag-pipeline-utils@<version>, e.g. a tarball path. Mostly for testing.
+    default: ""
+  node-version:
+    description: Node.js version to set up. Leave empty to use the runner's Node.js.
+    default: "22"
+  github-token:
+    description: Token used to post the pull request comment.
+    default: ${{ github.token }}
+
+outputs:
+  passed:
+    description: '"true" when the evaluation passed, "false" when it failed.'
+    value: ${{ steps.eval.outputs.passed }}
+  report:
+    description: Path to the JSON report of this run, for use as a later baseline.
+    value: ${{ steps.eval.outputs.report }}
+  summary:
+    description: Path to the Markdown summary.
+    value: ${{ steps.eval.outputs.summary }}
+  compared:
+    description: '"true" when the run was compared with a baseline.'
+    value: ${{ steps.eval.outputs.compared }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      if: inputs.node-version != ''
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Find or install the rag-pipeline CLI
+      id: cli
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -z "$INPUT_PACKAGE" ] && [ -x node_modules/.bin/rag-pipeline ]; then
+          bin="$PWD/node_modules/.bin/rag-pipeline"
+          echo "Using the project's own CLI: $("$bin" --version)"
+        else
+          spec="${INPUT_PACKAGE:-@devilsdev/rag-pipeline-utils@$INPUT_VERSION}"
+          dir="$RUNNER_TEMP/rag-eval-cli"
+          mkdir -p "$dir"
+          echo "Installing $spec"
+          npm install --prefix "$dir" --no-save --no-audit --no-fund --loglevel=error "$spec"
+          bin="$dir/node_modules/.bin/rag-pipeline"
+          echo "Installed rag-pipeline $("$bin" --version)"
+        fi
+        echo "bin=$bin" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the baseline
+      id: restore
+      if: inputs.baseline == '' && inputs.baseline-cache == 'true' && github.event_name == 'pull_request'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.rag-eval/baseline-${{ inputs.name }}.json
+        key: rag-eval-${{ inputs.name }}-${{ github.base_ref }}-none
+        restore-keys: rag-eval-${{ inputs.name }}-${{ github.base_ref }}-
+
+    - name: Index the documents
+      if: inputs.ingest != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        RAG_BIN: ${{ steps.cli.outputs.bin }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_INGEST: ${{ inputs.ingest }}
+      run: |
+        set -euo pipefail
+        "$RAG_BIN" --config "$INPUT_CONFIG" ingest "$INPUT_INGEST"
+
+    - name: Run the evaluation
+      id: eval
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        RAG_BIN: ${{ steps.cli.outputs.bin }}
+        INPUT_DATASET: ${{ inputs.dataset }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_MIN: ${{ inputs.min }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_TOLERANCE: ${{ inputs.tolerance }}
+        INPUT_CASE_TOLERANCE: ${{ inputs.case-tolerance }}
+        INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_TOP_K: ${{ inputs.top-k }}
+        INPUT_NAME: ${{ inputs.name }}
+        CACHED_BASELINE: ${{ github.workspace }}/.rag-eval/baseline-${{ inputs.name }}.json
+        CACHE_HIT: ${{ steps.restore.outputs.cache-matched-key }}
+      run: |
+        set -uo pipefail
+        out="$RUNNER_TEMP/rag-eval-$INPUT_NAME"
+        mkdir -p "$out"
+        report="$out/report.json"
+        summary="$out/summary.md"
+        rm -f "$report" "$summary"
+
+        args=(--config "$INPUT_CONFIG" eval "$INPUT_DATASET" --output "$report" --report "$summary")
+        while IFS= read -r line; do
+          line="$(echo "$line" | tr -d '[:space:]')"
+          [ -n "$line" ] && args+=(--min "$line")
+        done <<< "$INPUT_MIN"
+        [ -n "$INPUT_TOLERANCE" ] && args+=(--tolerance "$INPUT_TOLERANCE")
+        [ -n "$INPUT_CASE_TOLERANCE" ] && args+=(--case-tolerance "$INPUT_CASE_TOLERANCE")
+        [ -n "$INPUT_CONCURRENCY" ] && args+=(--concurrency "$INPUT_CONCURRENCY")
+        [ -n "$INPUT_TIMEOUT" ] && args+=(--timeout "$INPUT_TIMEOUT")
+        [ -n "$INPUT_TOP_K" ] && args+=(--top-k "$INPUT_TOP_K")
+
+        compared=false
+        note=""
+        if [ -n "$INPUT_BASELINE" ]; then
+          if [ ! -f "$INPUT_BASELINE" ]; then
+            echo "::error::baseline file not found: $INPUT_BASELINE"
+            exit 1
+          fi
+          args+=(--baseline "$INPUT_BASELINE")
+          compared=true
+        elif [ -n "$CACHE_HIT" ] && [ -f "$CACHED_BASELINE" ]; then
+          args+=(--baseline "$CACHED_BASELINE")
+          compared=true
+        elif [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
+          note="No baseline was found for this branch, so the comparison was skipped; only the minimums applied."
+        fi
+
+        "$RAG_BIN" "${args[@]}"
+        code=$?
+
+        if [ ! -f "$summary" ]; then
+          # No summary means the CLI stopped before scoring: a bad config,
+          # an invalid dataset or an empty index. That is not a regression.
+          echo "::error::rag-pipeline eval did not produce a summary (exit $code); see the log above"
+          exit 1
+        fi
+
+        marked="$out/comment.md"
+        {
+          echo "<!-- rag-eval:$INPUT_NAME -->"
+          cat "$summary"
+          if [ -n "$note" ]; then echo; echo "> $note"; fi
+        } > "$marked"
+        cat "$marked" >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$code" = "0" ]; then passed=true; else passed=false; fi
+        {
+          echo "passed=$passed"
+          echo "report=$report"
+          echo "summary=$marked"
+          echo "compared=$compared"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Comment on the pull request
+      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.eval.outputs.summary != ''
+      uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+      env:
+        SUMMARY_FILE: ${{ steps.eval.outputs.summary }}
+        MARKER: "<!-- rag-eval:${{ inputs.name }} -->"
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require("fs");
+          const body = fs.readFileSync(process.env.SUMMARY_FILE, "utf8");
+          const marker = process.env.MARKER;
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          try {
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user && c.user.type === "Bot" && c.body && c.body.startsWith(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info(`Updated comment ${existing.html_url}`);
+            } else {
+              const { data } = await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info(`Posted comment ${data.html_url}`);
+            }
+          } catch (err) {
+            // Pull requests from forks get a read-only token.
+            core.warning(`Could not comment on the pull request (${err.message}). The summary is in the job summary.`);
+          }
+
+    - name: Prepare the baseline for the cache
+      id: stage
+      if: inputs.baseline == '' && inputs.baseline-cache == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && steps.eval.outputs.report != ''
+      shell: bash
+      env:
+        REPORT: ${{ steps.eval.outputs.report }}
+        CACHED_BASELINE: ${{ github.workspace }}/.rag-eval/baseline-${{ inputs.name }}.json
+      run: |
+        mkdir -p "$(dirname "$CACHED_BASELINE")"
+        cp "$REPORT" "$CACHED_BASELINE"
+
+    - name: Save the baseline
+      if: steps.stage.outcome == 'success'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.rag-eval/baseline-${{ inputs.name }}.json
+        key: rag-eval-${{ inputs.name }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Fail when the evaluation failed
+      if: inputs.fail == 'true' && steps.eval.outputs.passed == 'false'
+      shell: bash
+      run: |
+        echo "::error::The RAG evaluation failed; see the summary"
+        exit 1
