@@ -152,7 +152,7 @@ runs:
         CACHED_BASELINE: ${{ github.workspace }}/.rag-eval/baseline-${{ inputs.name }}.json
         CACHE_HIT: ${{ steps.restore.outputs.cache-matched-key }}
       run: |
-        set -uo pipefail
+        set -euo pipefail
         out="$RUNNER_TEMP/rag-eval-$INPUT_NAME"
         mkdir -p "$out"
         report="$out/report.json"
@@ -186,8 +186,10 @@ runs:
           note="No baseline was found for this branch, so the comparison was skipped; only the minimums applied."
         fi
 
-        "$RAG_BIN" "${args[@]}"
-        code=$?
+        # `shell: bash` runs with -e, so capture the exit code instead of
+        # stopping here: a failed evaluation still has a summary to post.
+        code=0
+        "$RAG_BIN" "${args[@]}" || code=$?
 
         if [ ! -f "$summary" ]; then
           # No summary means the CLI stopped before scoring: a bad config,
