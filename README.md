@@ -128,7 +128,7 @@ Scoring can change between library versions. When the baseline and the run used 
 | `name`              | `rag-eval`          | Separates the cached baseline and the comment when a workflow runs more than one evaluation      |
 | `comment`           | `true`              | Post the summary on the pull request and update it on later runs                                 |
 | `fail`              | `true`              | Fail the job when the evaluation fails; `false` only reports                                     |
-| `version`           | `2`                 | Library version to install when the project doesn't have it                                      |
+| `version`           | `^2.7.0`            | Library version to install when the project doesn't have it                                      |
 | `package`           |                     | A package to install instead, such as a tarball; mostly for testing                              |
 | `node-version`      | `22`                | Node.js version to set up; empty uses the runner's                                               |
 | `github-token`      | `${{ github.token }}` | Token for the comment                                                                          |
