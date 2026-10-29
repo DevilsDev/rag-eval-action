@@ -104,7 +104,9 @@ runs:
           dir="$RUNNER_TEMP/rag-eval-cli"
           mkdir -p "$dir"
           echo "Installing $spec"
-          npm install --prefix "$dir" --no-save --no-audit --no-fund --loglevel=error "$spec"
+          # No install scripts: the CLI needs none, and it keeps dependencies
+          # from running code at install time.
+          npm install --prefix "$dir" --no-save --no-audit --no-fund --ignore-scripts --loglevel=error "$spec"
           bin="$dir/node_modules/.bin/rag-pipeline"
           echo "Installed rag-pipeline $("$bin" --version)"
         fi
