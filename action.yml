@@ -53,7 +53,7 @@ inputs:
     default: "true"
   version:
     description: Version of @devilsdev/rag-pipeline-utils to install when the project doesn't have it installed. Needs 2.7.0 or later.
-    default: "2"
+    default: "^2.7.0"
   package:
     description: Package to install instead of @devilsdev/rag-pipeline-utils@<version>, e.g. a tarball path. Mostly for testing.
     default: ""
