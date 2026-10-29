@@ -1,5 +1,5 @@
 name: RAG Pipeline Eval
-description: Fail a pull request when RAG answers get less grounded. Scores a test set with @devilsdev/rag-pipeline-utils and posts a summary.
+description: Fail a pull request when RAG answers get less grounded: scores a test set and posts a summary.
 author: DevilsDev
 branding:
   icon: check-circle
