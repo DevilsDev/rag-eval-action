@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Keeps the pinned action SHAs in action.yml and the workflows current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
