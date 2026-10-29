@@ -2,7 +2,7 @@
 
 A GitHub Action that fails a pull request when your RAG pipeline's answers get less grounded. It runs a test set through your pipeline with [`@devilsdev/rag-pipeline-utils`](https://www.npmjs.com/package/@devilsdev/rag-pipeline-utils), checks the scores against minimums and against your main branch, and posts a summary on the pull request.
 
-> **Not released yet.** The Action needs `@devilsdev/rag-pipeline-utils` 2.7.0, which adds the `rag-pipeline eval` command. Until 2.7.0 is on npm there is no `v1` tag. Its tests run against a build of the library's main branch.
+It needs `@devilsdev/rag-pipeline-utils` 2.7.0 or later, which adds the `rag-pipeline eval` command. When your project doesn't have the library installed, the Action installs the latest 2.x.
 
 ## What it checks
 
