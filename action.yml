@@ -52,8 +52,11 @@ inputs:
     description: When "true", fails the job when the evaluation fails. Set "false" to only report.
     default: "true"
   version:
-    description: Version of @devilsdev/rag-pipeline-utils to install when the project doesn't have it installed. Needs 2.7.0 or later.
-    default: "^2.7.0"
+    description: Version of @devilsdev/rag-pipeline-utils to install when the project doesn't have it installed. Needs 2.7.0 or later; 3.x needs Node.js 22 or later.
+    default: "^3.0.0"
+  extra-packages:
+    description: More npm packages to install next to the CLI, separated by spaces, e.g. what your plugins import. The Action adds openai and pg itself when the config uses the openai or pgvector components.
+    default: ""
   package:
     description: Package to install instead of @devilsdev/rag-pipeline-utils@<version>, e.g. a tarball path. Mostly for testing.
     default: ""
@@ -94,6 +97,9 @@ runs:
       env:
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_EXTRA: ${{ inputs.extra-packages }}
+        PEERS_SCRIPT: ${{ github.action_path }}/scripts/peers.js
       run: |
         set -euo pipefail
         if [ -z "$INPUT_PACKAGE" ] && [ -x node_modules/.bin/rag-pipeline ]; then
@@ -103,10 +109,16 @@ runs:
           spec="${INPUT_PACKAGE:-@devilsdev/rag-pipeline-utils@$INPUT_VERSION}"
           dir="$RUNNER_TEMP/rag-eval-cli"
           mkdir -p "$dir"
-          echo "Installing $spec"
+          # Optional peer dependencies the config needs (openai, pg). Since
+          # 3.0.0 the library doesn't install them, and a CLI in this
+          # directory can't load the project's copies.
+          mapfile -t peers < <(node "$PEERS_SCRIPT" "$INPUT_CONFIG")
+          read -r -a extra <<< "$INPUT_EXTRA"
+          packages=("$spec" "${peers[@]}" "${extra[@]}")
+          echo "Installing ${packages[*]}"
           # No install scripts: the CLI needs none, and it keeps dependencies
           # from running code at install time.
-          npm install --prefix "$dir" --no-save --no-audit --no-fund --ignore-scripts --loglevel=error "$spec"
+          npm install --prefix "$dir" --no-save --no-audit --no-fund --ignore-scripts --loglevel=error "${packages[@]}"
           bin="$dir/node_modules/.bin/rag-pipeline"
           echo "Installed rag-pipeline $("$bin" --version)"
         fi

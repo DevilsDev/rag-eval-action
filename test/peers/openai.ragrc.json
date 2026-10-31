@@ -1,0 +1,8 @@
+{
+  "pipeline": [
+    { "stage": "loader", "name": "auto" },
+    { "stage": "embedder", "name": "openai" },
+    { "stage": "retriever", "name": "pgvector" },
+    { "stage": "llm", "name": "openai" }
+  ]
+}
