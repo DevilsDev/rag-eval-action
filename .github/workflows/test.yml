@@ -122,3 +122,31 @@ jobs:
         run: |
           test "$INVALID" = "failure"
           test "$NOBASELINE" = "failure"
+
+  peers:
+    name: Optional peers the config needs are installed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Detect peers from a config
+        run: |
+          set -euo pipefail
+          test "$(node scripts/peers.js test/peers/openai.ragrc.json | tr '\n' ' ')" = "openai pg "
+          test -z "$(node scripts/peers.js test/fixture/.ragrc.json)"
+          test -z "$(node scripts/peers.js does-not-exist.json)"
+      # No API key here, so the run itself fails; only the install matters.
+      - name: Run with a config that uses openai
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: test/peers
+          config: openai.ragrc.json
+          dataset: ../fixture/tests.json
+          comment: "false"
+      - name: Check openai and pg were installed next to the CLI
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/rag-eval-cli/node_modules/openai/package.json"
+          test -f "$RUNNER_TEMP/rag-eval-cli/node_modules/pg/package.json"
