@@ -86,7 +86,7 @@ runs:
   steps:
     - name: Set up Node.js
       if: inputs.node-version != ''
-      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: ${{ inputs.node-version }}
 
@@ -228,7 +228,7 @@ runs:
 
     - name: Comment on the pull request
       if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.eval.outputs.summary != ''
-      uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       env:
         SUMMARY_FILE: ${{ steps.eval.outputs.summary }}
         MARKER: "<!-- rag-eval:${{ inputs.name }} -->"
